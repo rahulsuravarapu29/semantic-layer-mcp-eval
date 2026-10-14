@@ -1,0 +1,41 @@
+# THE RULE BOOK (semantic layer)
+# Written ONCE. Every dashboard, analyst and AI agent uses it.
+
+# GRAIN = "what one row means". Each metric is computed at the right grain,
+# which is how the semantic layer prevents fan-out (double counting).
+grains:
+  line:      # one row = one line item
+    from: |
+      invoice_lines l
+      JOIN invoices  i ON l.invoice_id  = i.invoice_id
+      JOIN accounts  a ON l.account_id  = a.account_id
+      JOIN customers c ON i.customer_id = c.customer_id
+  invoice:   # one row = one invoice (never joined to lines)
+    from: |
+      invoices i
+      JOIN customers c ON i.customer_id = c.customer_id
+
+metrics:
+  revenue:
+    description: "Money earned from sales, minus refunds."
+    grain: line
+    sql: "SUM(l.amount)"
+    # Uses standard_type (the ontology), NOT account names -> works for every company
+    where: "a.standard_type IN ('REVENUE', 'REFUND')"
+
+  invoice_count:
+    description: "Number of invoices sent (refund invoices included)."
+    grain: invoice
+    sql: "COUNT(*)"
+    where: "1=1"
+
+  unpaid_amount:
+    description: "Total value of invoices not yet paid."
+    grain: invoice
+    sql: "SUM(i.invoice_total)"
+    where: "i.status = 'UNPAID'"
+
+dimensions:
+  month:        {sql: "strftime('%Y-%m', i.invoice_date)", grains: [line, invoice]}
+  customer:     {sql: "c.name",                            grains: [line, invoice]}
+  account_type: {sql: "a.standard_type",                   grains: [line]}
